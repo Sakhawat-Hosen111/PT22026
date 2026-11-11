@@ -1,0 +1,11 @@
+
+# Local Python environment
+.venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Temporary application files
+.gradio/
+.env
