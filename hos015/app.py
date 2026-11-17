@@ -1,90 +1,229 @@
 
+"""
+SceneSense
+Semantic Image Segmentation using MaskFormer
+"""
+
 import gradio as gr
 
-from image_utils import (
-    validate_image,
-    get_image_info,
-    convert_to_rgb,
-    resize_image,
-    get_pixel_info
-)
+from segmentation.pipeline import run_segmentation
 
 
-def show_image(image, max_size):
-    # Make sure the user uploaded an image
+# ============================================================
+# APPLICATION STYLE
+# ============================================================
+
+CSS = """
+.gradio-container {
+    width: 100% !important;
+    max-width: 1400px !important;
+    margin: 0 auto !important;
+    padding: 20px 24px !important;
+    box-sizing: border-box !important;
+}
+
+#header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+#header h1 {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 0;
+}
+"""
+
+
+# ============================================================
+# SEGMENTATION FUNCTION
+# ============================================================
+
+def segment_image(image, opacity):
+    """
+    Run MaskFormer semantic segmentation.
+
+    Returns:
+        - Colored segmentation mask
+        - Segmentation overlay
+        - Detected category statistics
+        - Result summary
+    """
+
     if image is None:
         raise gr.Error("Please upload an image first.")
 
-    # Check the image before processing
-    try:
-        validate_image(image)
-    except ValueError as error:
-        raise gr.Error(str(error)) from error
+    return run_segmentation(image, opacity)
 
-    # Get the original image details
-    image_info = get_image_info(image)
 
-    # Convert the image to RGB
-    rgb_image = convert_to_rgb(image)
+# ============================================================
+# CLEAR FUNCTION
+# ============================================================
 
-    # Resize the image
-    resized_image = resize_image(
-        rgb_image,
-        max_size=int(max_size)
+def clear_results():
+    """Reset all image inputs and outputs."""
+
+    return None, None, None, [], ""
+
+
+# ============================================================
+# GRADIO APPLICATION
+# ============================================================
+
+with gr.Blocks(
+    title="SceneSense",
+    fill_width=True
+) as demo:
+
+    # Main title
+    gr.Markdown(
+        "# SceneSense",
+        elem_id="header"
     )
 
-    # Get the resized dimensions
-    new_width, new_height = resized_image.size
+    # --------------------------------------------------------
+    # THREE-COLUMN IMAGE LAYOUT
+    # --------------------------------------------------------
 
-    # Read the numerical pixel information
-    pixel_info = get_pixel_info(resized_image)
+    with gr.Row(equal_height=False):
 
-    # Combine all the image information
-    image_info += (
-        f"\nProcessed color mode: {resized_image.mode}"
-        f"\nResized width: {new_width} pixels"
-        f"\nResized height: {new_height} pixels"
-        f"\n\n{pixel_info}"
+        # COLUMN 1: INPUT IMAGE AND CONTROLS
+
+        with gr.Column(
+            scale=1,
+            min_width=260
+        ):
+
+            input_image = gr.Image(
+                type="pil",
+                label="Upload Photograph",
+                height=350
+            )
+
+            opacity_slider = gr.Slider(
+                minimum=0.0,
+                maximum=0.8,
+                value=0.35,
+                step=0.05,
+                label="Overlay Strength"
+            )
+
+            with gr.Row():
+
+                segment_button = gr.Button(
+                    "Segment Image",
+                    variant="primary"
+                )
+
+                clear_button = gr.Button(
+                    "Clear",
+                    variant="secondary"
+                )
+
+        # COLUMN 2: SEMANTIC SEGMENTATION MASK
+
+        with gr.Column(
+            scale=1,
+            min_width=260
+        ):
+
+            mask_output = gr.Image(
+                type="pil",
+                label="Semantic Mask",
+                height=350,
+                interactive=False
+            )
+
+        # COLUMN 3: SEGMENTATION OVERLAY
+
+        with gr.Column(
+            scale=1,
+            min_width=260
+        ):
+
+            overlay_output = gr.Image(
+                type="pil",
+                label="Segmentation Overlay",
+                height=350,
+                interactive=False
+            )
+
+    # --------------------------------------------------------
+    # SEGMENTATION RESULTS
+    # --------------------------------------------------------
+
+    gr.Markdown("### Segmentation Results")
+
+    summary_output = gr.Markdown()
+
+    class_table = gr.Dataframe(
+        headers=[
+            "Category",
+            "Pixels",
+            "Area (%)"
+        ],
+        datatype=[
+            "str",
+            "number",
+            "number"
+        ],
+        row_count=0,
+        column_count=3,
+        interactive=False,
+        label="Detected Categories",
+        max_height=350
     )
 
-    return resized_image, image_info
+    # --------------------------------------------------------
+    # BUTTON EVENTS
+    # --------------------------------------------------------
 
-
-app = gr.Interface(
-    fn=show_image,
-
-    inputs=[
-        gr.Image(
-            type="pil",
-            label="Input Image"
-        ),
-
-        gr.Slider(
-            minimum=256,
-            maximum=1024,
-            value=768,
-            step=128,
-            label="Maximum Image Size"
-        )
-    ],
-
-    outputs=[
-        gr.Image(label="Processed Image"),
-        gr.Textbox(
-            label="Image and Pixel Information",
-            lines=10
-        )
-    ],
-
-    title="SceneSense - Image Segmentation",
-
-    description=(
-        "Upload an image to check its dimensions, "
-        "convert it to RGB, resize it, "
-        "and inspect its pixel information."
+    segment_button.click(
+        fn=segment_image,
+        inputs=[
+            input_image,
+            opacity_slider
+        ],
+        outputs=[
+            mask_output,
+            overlay_output,
+            class_table,
+            summary_output
+        ]
     )
-)
 
+    clear_button.click(
+        fn=clear_results,
+        inputs=[],
+        outputs=[
+            input_image,
+            mask_output,
+            overlay_output,
+            class_table,
+            summary_output
+        ]
+    )
+
+
+# ============================================================
+# START APPLICATION
+# ============================================================
 
 if __name__ == "__main__":
-    app.launch()
+
+    demo.queue(
+        default_concurrency_limit=1
+    )
+
+    demo.launch(
+        server_name="127.0.0.1",
+        server_port=7860,
+        share=False,
+        inbrowser=True,
+        theme=gr.themes.Default(
+            primary_hue="teal",
+            neutral_hue="slate"
+        ),
+        css=CSS,
+        footer_links=[]
+    )
