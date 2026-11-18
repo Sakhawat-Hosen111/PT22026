@@ -1,11 +1,17 @@
 
-"""Tests for segmentation colours and overlay."""
+"""
+Tests for SceneSense segmentation colours and overlay.
+"""
 
+# NumPy is used to create sample segmentation masks.
 import numpy as np
+
+# Pytest is used to check expected results and errors.
 import pytest
 
 from PIL import Image
 
+# Import the visualization functions we want to test.
 from segmentation.visualize import (
     SPECIAL_COLORS,
     build_palette,
@@ -22,6 +28,7 @@ def test_palette_is_stable():
         4: "tree"
     }
 
+    # Generate the colour palette twice using the same categories.
     first = build_palette(
         labels,
         150
@@ -32,6 +39,7 @@ def test_palette_is_stable():
         150
     )
 
+    # Check that the same classes always receive the same colours.
     assert np.array_equal(first, second)
 
     assert tuple(first[12]) == SPECIAL_COLORS["person"]
@@ -41,6 +49,7 @@ def test_palette_is_stable():
 
 def test_color_mask_shape():
 
+    # Create a small two-dimensional segmentation map.
     label_map = np.array(
         [[0, 1], [1, 0]],
         dtype=np.uint8
@@ -51,11 +60,13 @@ def test_color_mask_shape():
         2
     )
 
+    # Convert the numerical class identifiers into a coloured image.
     mask = create_color_mask(
         label_map,
         palette
     )
 
+    # Check the image mode, dimensions and assigned pixel colour.
     assert mask.mode == "RGB"
 
     assert mask.size == (2, 2)
@@ -67,6 +78,7 @@ def test_color_mask_shape():
 
 def test_overlay_opacity_zero():
 
+    # Create a sample original image and segmentation mask.
     image = Image.new(
         "RGB",
         (5, 5),
@@ -85,6 +97,7 @@ def test_overlay_opacity_zero():
         0
     )
 
+    # At zero opacity, only the original image should be visible.
     assert result.getpixel((0, 0)) == (
         10, 20, 30
     )
@@ -110,6 +123,7 @@ def test_overlay_opacity_one():
         1
     )
 
+    # At full opacity, the result should show only the mask colours.
     assert result.getpixel((0, 0)) == (
         200, 100, 50
     )
@@ -117,6 +131,8 @@ def test_overlay_opacity_one():
 
 def test_invalid_class_rejected():
 
+    # Class identifier 12 is invalid when the palette
+    # contains colours for only two classes.
     with pytest.raises(ValueError):
 
         create_color_mask(
@@ -127,6 +143,8 @@ def test_invalid_class_rejected():
 
 def test_mismatched_dimensions_rejected():
 
+    # The original image and segmentation mask must
+    # have matching dimensions before blending.
     with pytest.raises(ValueError):
 
         create_overlay(
@@ -137,6 +155,7 @@ def test_mismatched_dimensions_rejected():
 
 def test_invalid_opacity_rejected():
 
+    # Overlay opacity must be between zero and one.
     with pytest.raises(ValueError):
 
         create_overlay(

@@ -51,17 +51,13 @@ Open a terminal in the "hos015" folder and install the required packages:
 
 python -m pip install -r requirements.txt
 
-
 Start the app:
 
 python app.py
 
-
 Open the local address shown in the terminal, usually "http://127.0.0.1:7860".
 
-Upload a photo, adjust the overlay strength if needed, and click "Segment Image".
-
-The pretrained model weights will download automatically the first time the app runs.
+Upload a photo, adjust the overlay strength if needed, and click "Segment Image". The pretrained model weights will download automatically the first time the app runs.
 
 6. Testing
 
@@ -72,19 +68,15 @@ Run the tests with:
 python -m pytest -q
 
 
-
 To check the model with an image, run:
 
 python -m scripts.verify_model --image "test_images/dogs.png"
-
 
 Replace the image path with a photo on your computer.
 
 7. Limitations
 
-The model does not always recognize every object correctly. The results also depend on the photo. It labels image regions by category but does not give each object its own separate ID.
-
-The percentages shown in the results describe how much of the image was assigned to each category. They are not accuracy scores.
+The model does not always recognize every object correctly. The results also depend on the photo. It labels image regions by category but does not give each object its own separate ID. The percentages shown in the results describe how much of the image was assigned to each category. They are not accuracy scores.
 
 8. Reference
 

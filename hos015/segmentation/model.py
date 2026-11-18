@@ -2,17 +2,8 @@
 """
 SceneSense - MaskFormer Model Integration
 
-Model:
-    facebook/maskformer-resnet50-coco-stuff
-
-Task:
-    Semantic image segmentation
-
-Features:
-    - 171 predefined semantic classes
-    - CPU inference
-    - Cached pretrained model
-    - Pixel-level class predictions
+This file loads the pretrained MaskFormer model
+and uses it to predict semantic labels for images.
 """
 
 from __future__ import annotations
@@ -25,11 +16,14 @@ import torch
 
 from PIL import Image
 
+# Transformers provides the image processor and the MaskFormer
+# model implementation used for semantic segmentation.
 from transformers import (
     AutoImageProcessor,
     MaskFormerForInstanceSegmentation,
 )
 
+# Import the model name, processing device and number of classes.
 from .config import (
     DEVICE,
     MODEL_ID,
@@ -41,15 +35,14 @@ from .config import (
 # LOAD THE PRETRAINED MODEL
 # ==========================================================
 
+# Cache the loaded model so it can be reused for other images
+# instead of loading the pretrained weights every time.
 @lru_cache(maxsize=1)
 def load_model():
-    """
-    Load the pretrained MaskFormer model once.
+    """Load the pretrained MaskFormer model and image processor."""
 
-    The cached model is reused for later predictions.
-    """
-
-    # Limit CPU threads to reduce unnecessary overhead.
+    # Limit PyTorch to a maximum of four processing threads.
+    # This helps control Central Processing Unit usage.
     torch.set_num_threads(
         min(4, os.cpu_count() or 1)
     )
@@ -61,29 +54,32 @@ def load_model():
     print("Model:", MODEL_ID)
     print("Device:", DEVICE)
 
-    # Load the model's image processor.
     print("\nLoading image processor...")
 
+    # Load the image processor that prepares photographs
+    # in the format expected by the pretrained model.
     processor = AutoImageProcessor.from_pretrained(
         MODEL_ID,
         use_fast=False
     )
 
-    # Load the pretrained model.
     print("Loading pretrained MaskFormer...")
 
+    # Load the MaskFormer architecture and its pretrained weights.
     model = (
         MaskFormerForInstanceSegmentation
         .from_pretrained(MODEL_ID)
     )
 
-    # Use the local CPU.
+    # Move the model to the selected device, which is the CPU.
     model.to(torch.device(DEVICE))
 
-    # Disable training behavior.
+    # Use evaluation mode because the model is only making
+    # predictions and is not being trained.
     model.eval()
 
-    # Verify the expected class vocabulary.
+    # Check whether the loaded model supports the expected
+    # number of semantic categories.
     actual_classes = int(model.config.num_labels)
 
     if actual_classes != NUM_CLASSES:
@@ -96,6 +92,7 @@ def load_model():
     print("Classes:", actual_classes)
     print("Device:", DEVICE)
 
+    # Return the processor and model for image prediction.
     return processor, model
 
 
@@ -109,13 +106,13 @@ def predict_label_map(
     model,
 ) -> np.ndarray:
     """
-    Predict a semantic class for every pixel.
+    Predict a semantic category for every pixel.
 
-    Returns:
-        A 2D NumPy array with shape (height, width).
+    Returns a two-dimensional NumPy array containing
+    the predicted class identifiers.
     """
 
-    # Validate the input.
+    # Make sure the input is a valid Pillow image.
     if not isinstance(image, Image.Image):
         raise TypeError(
             "Expected a PIL image."
@@ -126,27 +123,31 @@ def predict_label_map(
             "The image must have positive dimensions."
         )
 
-    # Ensure the image uses RGB.
+    # Convert the image into Red, Green and Blue colour mode.
     image = image.convert("RGB")
 
-    # Prepare the input tensor.
+    # The image processor resizes and normalizes the image
+    # according to the model settings and creates PyTorch tensors.
     inputs = processor(
         images=image,
         return_tensors="pt"
     )
 
+    # Move the input tensors to the same device as the model.
     inputs = {
         key: value.to(DEVICE)
         for key, value in inputs.items()
     }
 
-    # Run inference without calculating gradients.
+    # Inference mode avoids unnecessary gradient calculations,
+    # since we are using the model for prediction only.
     with torch.inference_mode():
 
+        # Pass the processed image through MaskFormer.
         outputs = model(**inputs)
 
-        # Convert MaskFormer predictions into
-        # semantic class IDs at image resolution.
+        # Convert the raw model predictions into a semantic
+        # class map matching the uploaded image dimensions.
         segmentation = (
             processor.post_process_semantic_segmentation(
                 outputs,
@@ -156,7 +157,8 @@ def predict_label_map(
             )[0]
         )
 
-    # Convert the predicted mask to NumPy.
+    # Convert the PyTorch output into a NumPy array.
+    # Each pixel stores a class identifier from 0 to 170.
     labels = (
         segmentation
         .detach()
@@ -165,7 +167,8 @@ def predict_label_map(
         .astype(np.uint8)
     )
 
-    # Verify the output shape.
+    # The segmentation mask must have the same
+    # height and width as the processed image.
     expected_shape = (
         image.height,
         image.width
@@ -177,7 +180,8 @@ def predict_label_map(
             "the processed image."
         )
 
-    # Verify the class IDs.
+    # Make sure the output is not empty and contains
+    # only valid semantic class identifiers.
     if (
         labels.size == 0
         or int(labels.max()) >= NUM_CLASSES
@@ -186,6 +190,7 @@ def predict_label_map(
             "The model returned invalid semantic class IDs."
         )
 
+    # Return the predicted class map to the segmentation pipeline.
     return labels
 
 
@@ -194,7 +199,7 @@ def predict_label_map(
 # ==========================================================
 
 def get_model_information():
-    """Return information about the selected model."""
+    """Return basic information about the selected model."""
 
     return {
         "name": "MaskFormer ResNet-50 COCO-Stuff",
