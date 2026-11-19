@@ -2,24 +2,20 @@
 """
 SceneSense - Segmentation Visualization
 
-This file assigns colours to semantic classes,
-creates the segmentation mask and blends it
-with the original image.
+Creates semantic masks, instance masks and panoptic overlays.
 """
 
 from __future__ import annotations
 
-# colorsys is used to generate different colours for semantic classes.
 import colorsys
-from collections.abc import Mapping
+
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 from PIL import Image
 
 
-# These colours are assigned to some common semantic categories
-# so they always appear with the same colour in different images.
-# Each tuple contains Red, Green and Blue values.
+# Fixed colours for common semantic categories.
 SPECIAL_COLORS = {
     "person": (230, 105, 99),
     "animal": (234, 166, 83),
@@ -48,8 +44,7 @@ SPECIAL_COLORS = {
 }
 
 
-# Different animal classes use the same colour in the mask.
-# Their actual category names remain separate in the results table.
+# Group different animal classes under the same colour.
 ANIMALS = {
     "bird", "cat", "dog", "horse", "sheep", "cow", "elephant",
     "bear", "zebra", "giraffe", "deer", "rabbit", "monkey",
@@ -57,52 +52,42 @@ ANIMALS = {
 }
 
 
-# ============================================================
+# ==========================================================
 # CREATE COLOUR PALETTE
-# ============================================================
+# ==========================================================
 
 def build_palette(
     class_names: Mapping[int | str, str] | None = None,
     num_classes: int = 150,
 ) -> np.ndarray:
-    """Create consistent colours for the semantic classes."""
+    """Create consistent colours for semantic classes or segment indices."""
 
     if num_classes <= 0:
         raise ValueError("num_classes must be positive.")
 
     names = class_names or {}
 
-    # Create an empty NumPy array to store three colour values
-    # for each semantic class.
     palette = np.empty(
         (num_classes, 3),
         dtype=np.uint8
     )
 
-    # Assign a colour to each class using its class identifier.
     for class_id in range(num_classes):
 
-        # Generate a consistent colour using the class identifier.
-        # The same class will receive the same colour each time.
+        # Generate different colours for different class IDs.
         hue = (class_id * 0.61803398875) % 1.0
 
-        # Convert Hue, Saturation and Value into Red, Green and Blue.
-        # Lower saturation creates softer colours for the mask.
         rgb = colorsys.hsv_to_rgb(
             hue,
             0.43,
             0.82
         )
 
-        # Convert colour values from the 0–1 range
-        # into the 0–255 range used by image pixels.
         color = tuple(
             int(round(value * 255))
             for value in rgb
         )
 
-        # Find the category name using its class identifier.
-        # Convert it to lowercase for easier matching.
         label = str(
             names.get(
                 class_id,
@@ -110,35 +95,31 @@ def build_palette(
             )
         ).strip().lower()
 
-        # Use a fixed colour for animal categories.
+        # Use predefined colours for common categories.
         if label in ANIMALS:
             color = SPECIAL_COLORS["animal"]
 
-        # Use the predefined colour if the category is listed.
         elif label in SPECIAL_COLORS:
             color = SPECIAL_COLORS[label]
 
-        # Store the final colour for this semantic class.
         palette[class_id] = color
 
     return palette
 
 
-# ============================================================
-# CREATE SEGMENTATION MASK
-# ============================================================
+# ==========================================================
+# CREATE SEMANTIC SEGMENTATION MASK
+# ==========================================================
 
 def create_color_mask(
     label_map: np.ndarray,
     palette: np.ndarray,
 ) -> Image.Image:
-    """Convert the predicted class identifiers into a coloured mask."""
+    """Convert integer semantic class identifiers into an RGB mask."""
 
-    # Convert the class map and colour palette into NumPy arrays.
     labels = np.asarray(label_map)
     colors = np.asarray(palette)
 
-    # The label map must be a non-empty two-dimensional array.
     if labels.ndim != 2 or labels.size == 0:
         raise ValueError(
             "Label map must be a non-empty 2D array."
@@ -149,69 +130,162 @@ def create_color_mask(
             "Label map must contain integer IDs."
         )
 
-    # Every class must have three colour values:
-    # Red, Green and Blue.
-    if (
-        colors.ndim != 2
-        or colors.shape[1] != 3
-        or len(colors) == 0
-    ):
+    if colors.ndim != 2 or colors.shape[1] != 3 or len(colors) == 0:
         raise ValueError(
             "Palette must have shape (N, 3)."
         )
 
-    # Make sure all predicted class identifiers
-    # have corresponding colours in the palette.
-    if (
-        np.any(labels < 0)
-        or np.any(labels >= len(colors))
-    ):
+    if np.any(labels < 0) or np.any(labels >= len(colors)):
         raise ValueError(
             "Label map contains an invalid class ID."
         )
 
-    # Replace each numerical class identifier
-    # with its corresponding Red, Green and Blue colour.
+    # Replace every class ID with its corresponding RGB colour.
     rgb = colors[
         labels.astype(np.int64)
     ].astype(np.uint8)
 
-    # Convert the coloured NumPy array into a Pillow image.
     return Image.fromarray(rgb, mode="RGB")
 
 
-# ============================================================
-# CREATE SEGMENTATION OVERLAY
-# ============================================================
+# ==========================================================
+# CREATE SEMANTIC OVERLAY
+# ==========================================================
 
 def create_overlay(
     image: Image.Image,
     color_mask: Image.Image,
     opacity: float = 0.35,
 ) -> Image.Image:
-    """Blend the coloured segmentation mask with the original image."""
+    """Blend a coloured segmentation mask with the original image."""
 
-    # Opacity must be between 0 and 1.
     if not 0.0 <= float(opacity) <= 1.0:
         raise ValueError(
             "Opacity must be between 0 and 1."
         )
 
-    # Make sure both images use Red, Green and Blue colour mode.
     original = image.convert("RGB")
     mask = color_mask.convert("RGB")
 
-    # Both images must have the same dimensions
-    # so their pixels can be blended correctly.
     if original.size != mask.size:
         raise ValueError(
             "Image and mask dimensions must match."
         )
 
-    # Blend the segmentation colours with the original photograph.
-    # Opacity 0 shows the original image, while 1 shows only the mask.
+    # Combine the original image and mask using the selected opacity.
     return Image.blend(
         original,
         mask,
         float(opacity)
     )
+
+
+# ==========================================================
+# CREATE PANOPTIC VISUALIZATION
+# ==========================================================
+
+def create_panoptic_visualization(
+    image: Image.Image,
+    segmentation_map: np.ndarray,
+    segments_info: Sequence[Mapping],
+    opacity: float = 0.35,
+) -> tuple[Image.Image, Image.Image]:
+    """Create a unique colour for each panoptic segment."""
+
+    if not isinstance(image, Image.Image):
+        raise TypeError("Expected a PIL image.")
+
+    if not 0.0 <= float(opacity) <= 1.0:
+        raise ValueError(
+            "Opacity must be between 0 and 1."
+        )
+
+    labels = np.asarray(segmentation_map)
+
+    width, height = image.size
+
+    if labels.ndim != 2 or labels.size == 0:
+        raise ValueError(
+            "Panoptic map must be a non-empty 2D array."
+        )
+
+    if labels.shape != (height, width):
+        raise ValueError(
+            "Panoptic map dimensions must match the image."
+        )
+
+    if not np.issubdtype(labels.dtype, np.integer):
+        raise ValueError(
+            "Panoptic map must contain integer segment IDs."
+        )
+
+    detected_segments = []
+
+    # Find the pixel area of each predicted segment.
+    for segment in segments_info:
+
+        segment_id = int(segment["id"])
+
+        region = labels == segment_id
+
+        pixel_count = int(
+            np.count_nonzero(region)
+        )
+
+        if pixel_count:
+            detected_segments.append({
+                "id": segment_id,
+                "mask": region,
+                "pixels": pixel_count,
+            })
+
+    # Larger segments receive colours first.
+    detected_segments.sort(
+        key=lambda item: item["pixels"],
+        reverse=True
+    )
+
+    palette = build_palette(
+        num_classes=max(1, len(detected_segments))
+    )
+
+    original = np.asarray(
+        image.convert("RGB"),
+        dtype=np.uint8
+    )
+
+    # Unassigned pixels remain black in the segmentation mask.
+    mask_pixels = np.zeros(
+        (height, width, 3),
+        dtype=np.uint8
+    )
+
+    overlay_pixels = original.copy()
+
+    for index, segment in enumerate(detected_segments):
+
+        region = segment["mask"]
+
+        # Give each segment a different colour.
+        color = palette[index].astype(np.float32)
+
+        mask_pixels[region] = color.astype(np.uint8)
+
+        # Blend colours only inside the detected segment.
+        overlay_pixels[region] = np.rint(
+            (1.0 - float(opacity)) * original[region]
+            + float(opacity) * color
+        ).clip(0, 255).astype(np.uint8)
+
+    # Convert the final NumPy arrays into images for Gradio.
+    color_mask = Image.fromarray(
+        mask_pixels,
+        mode="RGB"
+    )
+
+    overlay = Image.fromarray(
+        overlay_pixels,
+        mode="RGB"
+    )
+
+    return color_mask, overlay

@@ -1,16 +1,25 @@
 
-"""Configuration for the SceneSense MaskFormer application."""
+"""Configuration for the SceneSense segmentation application."""
 
-MODEL_ID = "facebook/maskformer-resnet50-coco-stuff" #This is the pretrained model i used for segmentation
+# Pretrained model used for semantic segmentation.
+MODEL_ID = "facebook/maskformer-resnet50-coco-stuff"
+
+# Pretrained model used for instance and panoptic segmentation.
+INSTANCE_MODEL_ID = "facebook/maskformer-swin-tiny-coco"
 
 DEVICE = "cpu"
+NUM_CLASSES = 171
 
-NUM_CLASSES = 171  # number of classes in the COCO-Stuff dataset
+# The first 80 COCO categories represent countable objects.
+INSTANCE_THING_CLASSES = 80
 
-DEFAULT_OVERLAY_OPACITY = 0.35 # overlay means the segmentation mask is drawn on top of the original image with this opacity
+INSTANCE_SCORE_THRESHOLD = 0.5
 
-MAX_IMAGE_SIDE = 640 # maximum image side for inference
+# Ignore very small predictions in instance segmentation.
+MIN_INSTANCE_AREA_PERCENT = 0.30
 
-MAX_INPUT_PIXELS = 40_000_000 # maximum number of pixels in the input image
+DEFAULT_OVERLAY_OPACITY = 0.35
 
-MIN_IMAGE_SIDE = 32 # minimum image side for inference
+MAX_IMAGE_SIDE = 640
+MAX_INPUT_PIXELS = 40_000_000
+MIN_IMAGE_SIDE = 32
